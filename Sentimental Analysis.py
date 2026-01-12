@@ -1,87 +1,113 @@
-from dotenv import load_dotenv
-from langchain_google_genai.llms import GoogleGenerativeAI
 import streamlit as st
+
+from nltk.sentiment import  SentimentIntensityAnalyzer
+
 import pandas as pd
-import os
+
+from langchain_groq import ChatGroq
+
+import matplotlib.pyplot as plt
+
+import nltk
+
+import seaborn as sns
+
 import warnings
+
 warnings.filterwarnings("ignore")
 
-# ✅ Set custom tab name and icon
-st.set_page_config(
-    page_title="Social Media Sentiment Analyzer",  # Browser tab title
-    page_icon="💬",                                # Tab icon (emoji or image URL)
-    layout="centered"
+nltk.download('vader_lexicon')
+
+api_key=st.text_input("Enter your Groq API key",type="password")
+
+if api_key:
+
+LLm=ChatGroq(
+
+api_key=api_key,
+
+  model="llama3-8b-8192",
+
+  temperature=0.5
+
 )
 
-st.title("💬 Social Media Sentiment Analyzer")
-st.info("Paste text or upload a CSV file to analyze sentiment.")
+else:
 
-load_dotenv()
-api_key = os.getenv("GEMINI_API_KEY")
-GEMINI_API_KEY = st.sidebar.text_input("AIzaSyDjC1F4bss3DEOxkIRhX3hRU-u5dwjx3yI", type="password", value=api_key)
+st.warning("Please enter your Groq API key to use the model.")
 
-# Function to get LLM sentiment response
-def get_response(post_text):
-    try:
-        llm = GoogleGenerativeAI(
-            api_key=GEMINI_API_KEY,
-            model="gemini-2.0-flash"
-        )
-        prompt = f"""
-Analyze the sentiment of the following social media post.
+sia=SentimentIntensityAnalyzer()
 
-Post: "{post_text}"
+st.title("🧠 VADER Sentiment Analysis (Positive, Negative, Neutral)")
 
-Respond with:
-- Sentiment: Positive, Negative, or Neutral
-- Explanation: Brief reason for the sentiment classification
-- Suggestion: (Optional) How the tone could be improved if needed
-"""
-        return llm.invoke(prompt)
-    except Exception as e:
-        return f"An error occurred: {e}"
+st.markdown("Enter any text below and get a sentiment rating using NLTK's VADER.")
 
-# UI
-st.title("💬 Social Media Sentiment Analyzer")
-st.info("Paste text or upload a CSV file to analyze sentiment.")
+dataset=st.file_uploader("upload your file",type=["CSV"])
 
-# Option 1: Manual Text Input
-post_text = st.text_area("📲 Enter a single social media post:")
-single_submit = st.button("🔍 Analyze One Post")
+if dataset:
 
-# Option 2: CSV Upload
-csv_file = st.file_uploader("📄 Or upload CSV file with a 'post_text' column", type="csv")
-bulk_submit = st.button("📊 Analyze CSV Dataset")
+df=pd.read_csv(dataset)
 
-# Process single post
-if single_submit:
-    if not GEMINI_API_KEY:
-        st.warning("Please enter your Gemini API key.")
-    elif not post_text.strip():
-        st.warning("Please enter some text.")
-    else:
-        with st.spinner("Analyzing..."):
-            response = get_response(post_text)
-            st.write(response)
-            st.success("✅ Sentiment analysis complete!")
+if "text" not in df.columns:
 
-# Process dataset
-if bulk_submit:
-    if not GEMINI_API_KEY:
-        st.warning("Please enter your Gemini API key.")
-    elif csv_file is None:
-        st.warning("Please upload a CSV file.")
-    else:
-        df = pd.read_csv(csv_file)
-        if "post_text" not in df.columns:
-            st.error("CSV must have a 'post_text' column.")
-        else:
-            st.info(f"Analyzing {len(df)} posts...")
-            results = []
-            for post in df["post_text"]:
-                result = get_response(post)
-                results.append(result)
-            df["sentiment_result"] = results
-            st.success("✅ All posts analyzed!")
-            st.dataframe(df)
-            st.download_button("⬇️ Download Results as CSV", data=df.to_csv(index=False), file_name="sentiment_results.csv")
+st.error("CSV must contain a 'text' column")
+
+else:
+
+df['values']=df['text'].apply(lambda x: sia.polarity_scores(str(x))) 
+
+df['compound']=df["values"].apply(lambda x: x["compound"])
+
+df['sentiment']=df['compound'].apply(lambda x: 'Positive' if x>=0.05 else ('Negative' if x<=-0.05 else 'Neutral'))
+
+
+
+
+
+
+
+st.dataframe(df[['text','compound','sentiment']].head())
+
+
+
+
+
+#visulzation
+
+
+
+sentiment_values=df['sentiment'].value_counts()
+
+fig1,plot=plt.subplots()
+
+plot.pie(sentiment_values,labels=sentiment_values.index,autopct='%1.1f%%',colors=sns.color_palette("pastel"))
+
+plot.axis("equal")
+
+st.pyplot(fig1)
+
+st.success("Analysis Complete")
+
+if st.checkbox("show full Analysis"): 
+
+    st.dataframe(df[['text','compound','sentiment']])
+
+    st.balloons() 
+
+
+
+
+
+if st.button("ask you Gemini about this data"):
+
+    prompt = f"""This is the sentiment distribution from VADER analysis:
+
+{sentiment_values.to_string()}
+
+Can you analyze and give insights about the overall sentiment of this dataset?"""
+
+
+
+    response = LLm.invoke(prompt)
+
+    st.write(response.content)
